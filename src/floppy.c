@@ -10,8 +10,15 @@
  */
 
 #define GPI_bus GPI_floating
+#if MCU == MCU_rp2350
+/* Bus outputs are emulated open-drain (deasserted = high-impedance);
+ * "AFO" hands the RDATA pin to PIO0. */
+#define GPO_bus GPO_opendrain(_2MHz,O_FALSE)
+#define AFO_bus _GPM_FUNC(GPIO_FUNC_PIO0)
+#else
 #define GPO_bus GPO_pushpull(_2MHz,O_FALSE)
 #define AFO_bus _AFO_pushpull(_2MHz,O_FALSE)
+#endif
 
 #define GPO_rdata GPO_bus
 #define AFO_rdata AFO_bus
@@ -194,8 +201,12 @@ void floppy_cancel(void)
     IRQx_disable(dma_wdata_irq);
     rdata_stop();
     wdata_stop();
+#if MCU == MCU_rp2350
+    flux_dma_disable();
+#else
     dma_rdata.ccr = 0;
     dma_wdata.ccr = 0;
+#endif
 
     /* Clear soft state. */
     timer_cancel(&drv->chgrst_timer);
@@ -373,15 +384,19 @@ static void floppy_sync_flux(void)
     int32_t ticks;
 
     /* No DMA should occur until the timer is enabled. */
-    ASSERT(dma_rd->cons == (ARRAY_SIZE(dma_rd->buf) - dma_rdata.cndtr));
+#if MCU != MCU_rp2350
+    /* (On RP2350 the DMA engine may legitimately run a few samples ahead,
+     * prefetching into the PIO FIFO, which is drained at rdata_start.) */
+    ASSERT(dma_rd->cons == dma_rdata_pos());
+#endif
 
     nr_to_wrap = ARRAY_SIZE(dma_rd->buf) - dma_rd->prod;
     nr_to_cons = (dma_rd->cons - dma_rd->prod - 1) & buf_mask;
     nr = min(nr_to_wrap, nr_to_cons);
     if (nr) {
-        dma_rd->prod += image_rdata_flux(
-            drv->image, &dma_rd->buf[dma_rd->prod], nr);
-        dma_rd->prod &= buf_mask;
+        nr = image_rdata_flux(drv->image, &dma_rd->buf[dma_rd->prod], nr);
+        flux_adjust(&dma_rd->buf[dma_rd->prod], nr);
+        dma_rd->prod = (dma_rd->prod + nr) & buf_mask;
     }
 
     nr = (dma_rd->prod - dma_rd->cons) & buf_mask;
@@ -444,7 +459,7 @@ static void floppy_sync_flux(void)
             const uint16_t buf_mask = ARRAY_SIZE(dma_rd->buf) - 1;
             uint32_t i, ticks = 0;
             for (i = dma_rd->cons; i != dma_rd->prod; i = (i+1) & buf_mask)
-                ticks += dma_rd->buf[i] + 1;
+                ticks += DMA_RD_TICKS(dma_rd->buf[i]);
 
             /* Subtract current flux offset beyond the index. */
             ticks -= image_ticks_since_index(drv->image);
@@ -530,8 +545,7 @@ static bool_t dma_rd_handle(struct drive *drv)
     case DMA_stopping:
         dma_rd->state = DMA_inactive;
         /* Reinitialise the circular buffer to empty. */
-        dma_rd->cons = dma_rd->prod =
-            ARRAY_SIZE(dma_rd->buf) - dma_rdata.cndtr;
+        dma_rd->cons = dma_rd->prod = dma_rdata_pos();
         /* Free-running index timer. */
         timer_cancel(&index.timer);
         timer_set(&index.timer, index.prev_time + drv->image->stk_per_rev);

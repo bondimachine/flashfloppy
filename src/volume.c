@@ -45,9 +45,9 @@ DSTATUS disk_initialize(BYTE pdrv)
     if (!(usb_ops.initialize(pdrv) & STA_NOINIT))
         goto out;
 
-    /* Try SD if the build and the board support it, and no USB drive is 
-     * inserted. */
-    if ((board_id == BRDREV_Gotek_sd_card)
+    /* Try SD if the build and the board support it, and no USB drive is
+     * inserted. (RP2350 boards have no USB stack: SD is the only volume.) */
+    if (((board_id == BRDREV_Gotek_sd_card) || (MCU == MCU_rp2350))
         && !usbh_msc_inserted()
         && !(sd_ops.initialize(pdrv) & STA_NOINIT)) {
         vol_ops = &sd_ops;

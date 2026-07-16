@@ -11,6 +11,16 @@
 
 #define BAUD 3000000 /* 3Mbaud */
 
+#if MCU == MCU_rp2350
+
+/* UART0 on GPIO 0 (TX) / GPIO 1 (RX), clocked from clk_peri. */
+#define USART_IRQ UART0_IRQ
+#define usart_tx_pin 0
+#define usart_rx_pin 1
+#define PCLK (APB1_MHZ * 1000000)
+
+#else
+
 #define USART1_IRQ 37
 #define USART3_IRQ 39
 
@@ -28,6 +38,8 @@
 #define usart_tx_pin 10
 #define usart_rx_pin 11
 #define PCLK (APB1_MHZ * 1000000)
+#endif
+
 #endif
 
 /* Normally flush to serial is asynchronously executed in a low-pri IRQ. */
@@ -49,9 +61,15 @@ static void flush_ring_to_serial(void)
     barrier();
 
     while (c != p) {
+#if MCU == MCU_rp2350
+        while (uart0->fr & UART_FR_TXFF)
+            cpu_relax();
+        uart0->dr = ring[MASK(c++)];
+#else
         while (!(usart->sr & USART_SR_TXE))
             cpu_relax();
         usart->dr = ring[MASK(c++)];
+#endif
     }
 
     barrier();
@@ -130,6 +148,22 @@ void console_sync(void)
 
 void console_init(void)
 {
+#if MCU == MCU_rp2350
+
+    /* TX/RX pins to the UART. */
+    gpio_configure_pin(gpioa, usart_rx_pin, GPI_pull_up);
+    io_bank0->gpio[usart_tx_pin].ctrl = GPIO_FUNC_UART;
+    io_bank0->gpio[usart_rx_pin].ctrl = GPIO_FUNC_UART;
+    gpio_set_pad(usart_tx_pin, PAD_IE | PAD_DRIVE_4MA);
+
+    /* BAUD, 8n1, FIFOs enabled. */
+    uart0->ibrd = PCLK / (16 * BAUD);
+    uart0->fbrd = ((PCLK % (16 * BAUD)) * 64 + (16 * BAUD) / 2) / (16 * BAUD);
+    uart0->lcr_h = UART_LCR_H_WLEN8 | UART_LCR_H_FEN;
+    uart0->cr = UART_CR_UARTEN | UART_CR_TXE | UART_CR_RXE;
+
+#else
+
     /* Turn on the clocks. */
 #if USART_IRQ == USART1_IRQ
     rcc->apb2enr |= RCC_APB2ENR_USART1EN;
@@ -153,22 +187,34 @@ void console_init(void)
     usart->cr1 = USART_CR1_UE | USART_CR1_TE | USART_CR1_RE;
     usart->cr3 = 0;
 
+#endif
+
     IRQx_set_prio(CONSOLE_SOFTIRQ, CONSOLE_IRQ_PRI);
     IRQx_enable(CONSOLE_SOFTIRQ);
 }
 
-/* Debug helper: if we get stuck somewhere, calling this beforehand will cause 
+/* Debug helper: if we get stuck somewhere, calling this beforehand will cause
  * any serial input to cause a crash dump of the stuck context. */
 void console_crash_on_input(void)
 {
+#if MCU == MCU_rp2350
+
+    (void)uart0->dr;
+    uart0->imsc = UART_INT_RX; /* deliberately unhandled -> crash dump */
+
+#else
+
     if (mcu_package == MCU_QFN32) {
-        /* Unavailable: PA10 is reassigned from SER_RX to K4 (rotary select 
+        /* Unavailable: PA10 is reassigned from SER_RX to K4 (rotary select
          * on the KC30 header). */
         return;
     }
 
     (void)usart->dr; /* clear UART_SR_RXNE */
     usart->cr1 |= USART_CR1_RXNEIE;
+
+#endif
+
     IRQx_set_prio(USART_IRQ, RESET_IRQ_PRI);
     IRQx_enable(USART_IRQ);
 }

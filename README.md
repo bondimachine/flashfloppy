@@ -25,6 +25,11 @@ like a real floppy drive but use disk images on a modern USB stick!
 ## Download
 - [**Download FlashFloppy**][Downloads]
 
+## RP2350 / Raspberry Pi Pico 2
+This tree also builds for the RP2350 (Raspberry Pi Pico 2), with disk
+images on an SD card. See [RP2350.md](RP2350.md) for the pin map, wiring
+and build instructions.
+
 ## Documentation
 - [**Read the GitHub Wiki**](https://github.com/keirf/flashfloppy/wiki)
 
