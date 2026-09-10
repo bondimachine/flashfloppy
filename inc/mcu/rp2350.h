@@ -113,6 +113,9 @@ void gpio_irq_disable_mask(uint32_t pin_mask);
 void gpio_irq_ack(unsigned int pin);
 uint32_t gpio_irq_status(unsigned int reg); /* proc0_ints[reg] */
 
+/* On-board LED, used as the drive-activity indicator (pico2/board.c). */
+void board_set_activity_led(bool_t on);
+
 /* Bootrom flash operations (see fpec_rp2350.c) */
 void *rp2350_rom_func(uint16_t code);
 

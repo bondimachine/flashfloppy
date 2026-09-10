@@ -4,3 +4,5 @@
 /out
 /ext
 __pycache__/
+#disk images for littlefs
+data

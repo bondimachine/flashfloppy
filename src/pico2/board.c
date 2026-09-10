@@ -13,6 +13,7 @@
  *   16-19  SD card on SPI0: MISO, CS, SCK, MOSI
  *   20/21  Display I2C0: SDA, SCL
  *   22     Button: Select
+ *   25     On-board LED: lit while the drive is selected (accessed)
  *   26/27  Buttons: Right/Left, or rotary encoder A/B
  *   28     JC "jumper": interface select / Amiga HD-ID output
  *
@@ -24,6 +25,7 @@
 #define pin_button_right 26
 #define pin_button_left  27
 #define pin_jc           28
+#define pin_led          25 /* Pico 2 on-board LED */
 
 /* Pull up currently unused and possibly-floating pins. */
 static void gpio_pull_up_pins(GPIO gpio, uint16_t mask)
@@ -60,6 +62,14 @@ void board_setup_rotary_exti(void)
     board_rotary_exti_mask = m(pin_button_right) | m(pin_button_left);
 }
 
+/* Drive-activity indicator: the Pico 2's own LED, mirroring the front-panel
+ * LED of a real floppy drive (lit while the drive is selected). Called from
+ * the SELA interrupt handler, so it must stay cheap. */
+void board_set_activity_led(bool_t on)
+{
+    gpio_write_pin(gpioa, pin_led, on);
+}
+
 void board_jc_set_mode(unsigned int mode)
 {
     gpio_configure_pin(gpioa, pin_jc, mode);
@@ -81,9 +91,9 @@ void board_init(void)
      * floppy_init), speaker (15). */
     lo_skip = 0xffff;
 
-    /* GPIO 16-31: SD SPI (16-19), I2C display (20,21).
+    /* GPIO 16-31: SD SPI (16-19), I2C display (20,21), LED (25).
      * Pull up buttons (22,26,27) and JC (28). */
-    hi_skip = 0x003f;
+    hi_skip = 0x023f;
 
     gpio_pull_up_pins(gpioa, ~lo_skip);
     /* Upper pins: pull up buttons and JC explicitly. */
@@ -92,6 +102,9 @@ void board_init(void)
     gpio_configure_pin(gpioa, pin_button_left, GPI_pull_up);
     gpio_configure_pin(gpioa, pin_jc, GPI_pull_up);
     (void)hi_skip;
+
+    /* On-board LED: drive-activity indicator, initially off. */
+    gpio_configure_pin(gpioa, pin_led, GPO_pushpull(_2MHz, LOW));
 
     /* The Pico 2's own USB socket: debug console, and the 1200-baud
      * BOOTSEL gesture. */

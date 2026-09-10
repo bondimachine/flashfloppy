@@ -368,6 +368,9 @@ static void IRQ_SELA_changed(void)
         return;
     drv->sel = sel;
 
+    /* Light the on-board LED while we are the selected drive. */
+    board_set_activity_led(sel);
+
     if (sel) {
         /* SELA is asserted (this drive is selected).
          * Immediately re-enable all our asserted outputs. */
