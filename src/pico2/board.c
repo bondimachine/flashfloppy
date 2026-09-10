@@ -90,6 +90,10 @@ void board_init(void)
     gpio_configure_pin(gpioa, pin_button_left, GPI_pull_up);
     gpio_configure_pin(gpioa, pin_jc, GPI_pull_up);
     (void)hi_skip;
+
+    /* The Pico 2's own USB socket: debug console, and the 1200-baud
+     * BOOTSEL gesture. */
+    usb_cdc_init();
 }
 
 /*

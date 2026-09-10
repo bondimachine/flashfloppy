@@ -20,28 +20,21 @@ XIP_BASE = 0x10000000
 
 PAYLOAD_SIZE = 256
 
-def main(argv):
-    if len(argv) != 3:
-        print("Usage: %s <input.bin> <output.uf2>" % argv[0])
-        return 1
-
-    with open(argv[1], "rb") as f:
-        data = f.read()
-
+def write_uf2(data, path, base=XIP_BASE):
     # Pad to a whole number of payload blocks.
     if len(data) % PAYLOAD_SIZE:
         data += b"\xff" * (PAYLOAD_SIZE - len(data) % PAYLOAD_SIZE)
 
     nr_blocks = len(data) // PAYLOAD_SIZE
 
-    with open(argv[2], "wb") as f:
+    with open(path, "wb") as f:
         for blk in range(nr_blocks):
             payload = data[blk*PAYLOAD_SIZE:(blk+1)*PAYLOAD_SIZE]
             block = struct.pack("<8I",
                                 UF2_MAGIC_START0,
                                 UF2_MAGIC_START1,
                                 FLAG_FAMILY_ID_PRESENT,
-                                XIP_BASE + blk*PAYLOAD_SIZE,
+                                base + blk*PAYLOAD_SIZE,
                                 PAYLOAD_SIZE,
                                 blk,
                                 nr_blocks,
@@ -51,7 +44,18 @@ def main(argv):
             assert len(block) == 512
             f.write(block)
 
-    print("%s: %u blocks (%u bytes)" % (argv[2], nr_blocks, len(data)))
+    print("%s: %u blocks (%u bytes)" % (path, nr_blocks, len(data)))
+
+
+def main(argv):
+    if len(argv) != 3:
+        print("Usage: %s <input.bin> <output.uf2>" % argv[0])
+        return 1
+
+    with open(argv[1], "rb") as f:
+        data = f.read()
+
+    write_uf2(data, argv[2])
     return 0
 
 if __name__ == "__main__":

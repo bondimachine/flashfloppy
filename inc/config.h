@@ -14,7 +14,7 @@ struct opt {
 };
 
 struct opts {
-    FIL *file;
+    FS_FILE *file;
     const struct opt *opts;
     char *arg;
     int argmax;

@@ -33,6 +33,9 @@ uint32_t arena_avail(void)
 
 void arena_init(void)
 {
+    /* Any open littlefs handle lives in memory we are about to hand out
+     * again. The volume is read-only, so simply drop them. */
+    fs_release_all();
     heap_p = heap_bot;
     heap_top = (char *)0x20000000 + ram_kb*1024;
 }

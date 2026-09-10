@@ -1,7 +1,7 @@
 /*
  * fs.c
  * 
- * Error-handling wrappers around FatFS.
+ * Error-handling wrappers around the filesystem layer (see vfs.c).
  * 
  * Written & released by Keir Fraser <keir.xen@gmail.com>
  * 
@@ -48,9 +48,9 @@ static BYTE mask_mode(BYTE mode)
     return mode;
 }
 
-FRESULT F_try_open(FIL *fp, const TCHAR *path, BYTE mode)
+FRESULT F_try_open(FS_FILE *fp, const TCHAR *path, BYTE mode)
 {
-    FRESULT fr = f_open(fp, path, mask_mode(mode));
+    FRESULT fr = fs_open(fp, path, mask_mode(mode));
     switch (fr) {
     case FR_NO_FILE:
     case FR_NO_PATH:
@@ -62,22 +62,35 @@ FRESULT F_try_open(FIL *fp, const TCHAR *path, BYTE mode)
     return fr;
 }
 
-void F_open(FIL *fp, const TCHAR *path, BYTE mode)
+#define FA_CREATES (FA_CREATE_NEW|FA_CREATE_ALWAYS|FA_OPEN_ALWAYS)
+
+void F_open(FS_FILE *fp, const TCHAR *path, BYTE mode)
 {
-    FRESULT fr = f_open(fp, path, mask_mode(mode));
+    FRESULT fr = fs_open(fp, path, mask_mode(mode));
+#if HAS_LITTLEFS
+    /* The internal-flash image store is the only volume that reports itself
+     * read-only (see volume_readonly()). A caller that wanted to write to or
+     * create a file there gets an empty one instead, so that the writes are
+     * dropped rather than the absent file being an error. */
+    if ((fr == FR_NO_FILE) && volume_readonly()
+        && (mode & (FA_WRITE|FA_CREATES))) {
+        fs_open_null(fp);
+        return;
+    }
+#endif
     handle_fr(fr);
 }
 
-void F_close(FIL *fp)
+void F_close(FS_FILE *fp)
 {
-    FRESULT fr = f_close(fp);
+    FRESULT fr = fs_close(fp);
     handle_fr(fr);
 }
 
-void F_read(FIL *fp, void *buff, UINT btr, UINT *br)
+void F_read(FS_FILE *fp, void *buff, UINT btr, UINT *br)
 {
     UINT _br;
-    FRESULT fr = f_read(fp, buff, btr, &_br);
+    FRESULT fr = fs_read(fp, buff, btr, &_br);
     if (br != NULL) {
         *br = _br;
     } else if (_br < btr) {
@@ -88,7 +101,7 @@ void F_read(FIL *fp, void *buff, UINT btr, UINT *br)
 
 #if !FF_FS_READONLY
 
-void F_write(FIL *fp, const void *buff, UINT btw, UINT *bw)
+void F_write(FS_FILE *fp, const void *buff, UINT btw, UINT *bw)
 {
     UINT _bw;
     FRESULT fr;
@@ -97,11 +110,11 @@ void F_write(FIL *fp, const void *buff, UINT btw, UINT *bw)
         if (bw) *bw = btw;
         return;
     }
-    if (!fp->dir_ptr) {
+    if (!fs_file_resizable(fp)) {
         /* File cannot be resized. Clip the write size. */
         btw = min_t(UINT, btw, f_size(fp) - f_tell(fp));
     }
-    fr = f_write(fp, buff, btw, &_bw);
+    fr = fs_write(fp, buff, btw, &_bw);
     if (bw != NULL) {
         *bw = _bw;
     } else if ((fr == FR_OK) && (_bw < btw)) {
@@ -110,68 +123,68 @@ void F_write(FIL *fp, const void *buff, UINT btw, UINT *bw)
     handle_fr(fr);
 }
 
-void F_sync(FIL *fp)
+void F_sync(FS_FILE *fp)
 {
-    FRESULT fr = f_sync(fp);
+    FRESULT fr = fs_sync(fp);
     handle_fr(fr);
 }
 
-void F_truncate(FIL *fp)
+void F_truncate(FS_FILE *fp)
 {
-    FRESULT fr = volume_readonly() ? FR_OK : f_truncate(fp);
+    FRESULT fr = volume_readonly() ? FR_OK : fs_truncate(fp);
     handle_fr(fr);
 }
 
 #endif /* !FF_FS_READONLY */
 
-void F_lseek(FIL *fp, FSIZE_t ofs)
+void F_lseek(FS_FILE *fp, FSIZE_t ofs)
 {
     FRESULT fr;
 #if !FF_FS_READONLY
-    if (!fp->dir_ptr) {
+    if (!fs_file_resizable(fp)) {
         /* File cannot be resized. Clip the seek offset. */
         ofs = min(ofs, f_size(fp));
     }
 #endif
-    fr = f_lseek(fp, ofs);
+    fr = fs_lseek(fp, ofs);
     handle_fr(fr);
 }
 
-void F_opendir(DIR *dp, const TCHAR *path)
+void F_opendir(FS_DIR *dp, const TCHAR *path)
 {
-    FRESULT fr = f_opendir(dp, path);
+    FRESULT fr = fs_opendir(dp, path);
     handle_fr(fr);
 }
 
-void F_closedir(DIR *dp)
+void F_closedir(FS_DIR *dp)
 {
-    FRESULT fr = f_closedir(dp);
+    FRESULT fr = fs_closedir(dp);
     handle_fr(fr);
 }
 
-void F_readdir(DIR *dp, FILINFO *fno)
+void F_readdir(FS_DIR *dp, FILINFO *fno)
 {
-    FRESULT fr = f_readdir(dp, fno);
+    FRESULT fr = fs_readdir(dp, fno);
     handle_fr(fr);
 }
 
-void F_findfirst(DIR *dp, FILINFO *fno, const TCHAR *path,
+void F_findfirst(FS_DIR *dp, FILINFO *fno, const TCHAR *path,
                  const TCHAR *pattern)
 {
-    FRESULT fr = f_findfirst(dp, fno, path, pattern);
+    FRESULT fr = fs_findfirst(dp, fno, path, pattern);
     handle_fr(fr);
 }
 
-void F_findnext(DIR *dp, FILINFO *fno)
+void F_findnext(FS_DIR *dp, FILINFO *fno)
 {
-    FRESULT fr = f_findnext(dp, fno);
+    FRESULT fr = fs_findnext(dp, fno);
     handle_fr(fr);
 }
 
 #if TARGET != TARGET_bootloader
 void F_chdir(const TCHAR *path)
 {
-    FRESULT fr = f_chdir(path);
+    FRESULT fr = fs_chdir(path);
     handle_fr(fr);
 }
 #endif

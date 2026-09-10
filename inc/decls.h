@@ -17,6 +17,18 @@
 
 #include "build_enums.h"
 #include "types.h"
+
+/* Can this build mount a littlefs image from internal flash? The RP2350
+ * carries its images in QSPI flash when no SD card is fitted. */
+#if (MCU == MCU_rp2350) && (TARGET != TARGET_bootloader)
+#define HAS_LITTLEFS 1
+#else
+#define HAS_LITTLEFS 0
+#endif
+
+/* Longest absolute path on a littlefs volume, including the NUL. */
+#define FS_PATH_MAX 128
+
 #include "mcu/common_regs.h"
 #include "mcu/common.h"
 #if MCU == MCU_stm32f105
@@ -35,6 +47,7 @@
 #include "time.h"
 #include "../src/fatfs/ff.h"
 #include "util.h"
+#include "vfs.h"
 #include "list.h"
 #include "cache.h"
 #include "da.h"

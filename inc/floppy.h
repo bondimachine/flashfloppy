@@ -167,7 +167,7 @@ struct image {
     const struct image_handler *track_handler;
 
     /* FatFS. */
-    FIL fp;
+    FS_FILE fp;
 
     /* Info about image as a whole. */
     uint8_t nr_cyls, nr_sides;

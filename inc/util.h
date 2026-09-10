@@ -16,8 +16,11 @@ struct slot {
     uint32_t firstCluster;
     uint32_t size;
     uint32_t dir_sect, dir_ptr;
+#if HAS_LITTLEFS
+    /* littlefs has no cluster chains: remember where the file lives. */
+    char path[FS_PATH_MAX];
+#endif
 };
-void fatfs_from_slot(FIL *file, const struct slot *slot, BYTE mode);
 
 bool_t lba_within_fat_volume(uint32_t lba);
 
@@ -93,10 +96,7 @@ static inline int printk(const char *format, ...) { return 0; }
 
 #define log(f, a...) printk("%s: " f, LOG_PREFIX, ## a)
 
-#if LEVEL == LEVEL_logfile
-/* Logfile management */
-void logfile_flush(FIL *file);
-#else
+#if LEVEL != LEVEL_logfile
 #define logfile_flush(f) ((void)0)
 #endif
 

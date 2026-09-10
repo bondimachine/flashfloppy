@@ -66,6 +66,24 @@ static void clock_init(void)
     clocks->peri.div = CLK_DIV_INT(1);
     clocks->peri.ctrl = CLK_PERI_CTRL_AUXSRC_SYS | CLK_PERI_CTRL_ENABLE;
 
+    /* PLL_USB: 12MHz / 1 * 100 = 1200MHz VCO; / 5 / 5 = 48MHz, the exact
+     * rate the USB full-speed SIE requires. */
+    RP_SET(&resets->reset) = RST_PLL_USB;
+    RP_CLR(&resets->reset) = RST_PLL_USB;
+    while (!(resets->reset_done & RST_PLL_USB))
+        cpu_relax();
+    pll_usb->cs = PLL_CS_REFDIV(1);
+    pll_usb->fbdiv_int = 100;
+    RP_CLR(&pll_usb->pwr) = PLL_PWR_PD | PLL_PWR_VCOPD;
+    while (!(pll_usb->cs & PLL_CS_LOCK))
+        cpu_relax();
+    pll_usb->prim = PLL_PRIM_POSTDIV1(5) | PLL_PRIM_POSTDIV2(5);
+    RP_CLR(&pll_usb->pwr) = PLL_PWR_POSTDIVPD;
+
+    /* clk_usb = pll_usb = 48MHz. */
+    clocks->usb.div = CLK_DIV_INT(1);
+    clocks->usb.ctrl = CLK_USB_CTRL_AUXSRC_PLL_USB | CLK_USB_CTRL_ENABLE;
+
     /* Tick generators: 1MHz ticks from the 12MHz clk_ref for the
      * microsecond timer (TIMER0), watchdog, and this core's SysTick. */
     ticks->timer0.cycles = 12;

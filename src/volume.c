@@ -31,10 +31,14 @@ void volume_cache_destroy(void)
     metadata_addr = NULL;
 }
 
-void volume_cache_metadata_only(FIL *fp)
+void volume_cache_metadata_only(FS_FILE *fp)
 {
+    if (fs_is_lfs()) {
+        /* No block layer under littlefs: nothing to cache. */
+        return;
+    }
     /* All metadata is accessed via the per-filesystem "sector window". */
-    metadata_addr = fp->obj.fs->win;
+    metadata_addr = FS_FAT(fp)->obj.fs->win;
 }
 #endif
 
@@ -106,6 +110,9 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE ctrl, void *buff)
 
 bool_t volume_connected(void)
 {
+    /* The internal-flash littlefs volume is soldered down: always present. */
+    if (fs_is_lfs())
+        return TRUE;
     /* Force switch to USB drive if inserted. */
     if ((vol_ops == &sd_ops) && usbh_msc_inserted())
         return FALSE;
@@ -114,6 +121,9 @@ bool_t volume_connected(void)
 
 bool_t volume_readonly(void)
 {
+    /* littlefs in QSPI flash is mounted read-only: see vfs.c. */
+    if (fs_is_lfs())
+        return TRUE;
     return vol_ops->readonly();
 }
 

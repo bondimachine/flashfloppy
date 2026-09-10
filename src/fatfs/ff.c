@@ -4213,7 +4213,7 @@ FRESULT f_sync (
 					fp->flag &= (BYTE)~FA_MODIFIED;
 				}
 			} else {
-				/* FlashFloppy: fatfs_from_slot() doesn't have
+				/* FlashFloppy: fs_from_slot() doesn't have
 				 * parent dir info and cannot update info. */
 				res = sync_fs(fs);
 				fp->flag &= (BYTE)~FA_MODIFIED;

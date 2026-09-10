@@ -24,6 +24,8 @@
 #define RP_SPI volatile struct rp_spi * const
 #define RP_I2C volatile struct rp_i2c * const
 #define QMI volatile struct qmi * const
+#define RP_USB volatile struct rp_usb * const
+#define USB_DPRAM volatile struct usb_dpram * const
 
 /* C-accessible registers. */
 static STK stk = (struct stk *)STK_BASE;
@@ -33,6 +35,7 @@ static RESETS resets = (struct resets *)RESETS_BASE;
 static PSM psm = (struct psm *)PSM_BASE;
 static XOSC xosc = (struct xosc *)XOSC_BASE;
 static PLL pll_sys = (struct pll *)PLL_SYS_BASE;
+static PLL pll_usb = (struct pll *)PLL_USB_BASE;
 static CLOCKS clocks = (struct clocks *)CLOCKS_BASE;
 static TICKS ticks = (struct ticks *)TICKS_BASE;
 static WATCHDOG watchdog = (struct watchdog *)WATCHDOG_BASE;
@@ -45,6 +48,8 @@ static RP_UART uart0 = (struct rp_uart *)UART0_BASE;
 static RP_SPI rp_spi0 = (struct rp_spi *)SPI0_BASE;
 static RP_I2C rp_i2c0 = (struct rp_i2c *)I2C0_BASE;
 static QMI qmi = (struct qmi *)QMI_BASE;
+static RP_USB usb_hw = (struct rp_usb *)USBCTRL_REGS_BASE;
+static USB_DPRAM usb_dpram = (struct usb_dpram *)USBCTRL_DPRAM_BASE;
 static volatile struct dma * const dma = (struct dma *)DMA_BASE;
 
 /* Clocks */
@@ -110,6 +115,13 @@ uint32_t gpio_irq_status(unsigned int reg); /* proc0_ints[reg] */
 
 /* Bootrom flash operations (see fpec_rp2350.c) */
 void *rp2350_rom_func(uint16_t code);
+
+/* USB CDC-ACM device: debug console, and the Arduino-style "open the port
+ * at 1200 baud to enter BOOTSEL" gesture. See pico2/usb_cdc.c. */
+void usb_cdc_init(void);
+void usb_cdc_putc(char c);
+void usb_cdc_kick(void);
+void usb_cdc_flush_sync(void);
 
 /*
  * Local variables:

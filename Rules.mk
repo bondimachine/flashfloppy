@@ -41,6 +41,9 @@ FLAGS += -mcpu=cortex-m4
 ## RP2350 (Raspberry Pi Pico 2)
 else ifeq ($(mcu),rp2350)
 FLAGS += -mcpu=cortex-m33
+# littlefs image store in the internal QSPI flash. Mounted read-only, and
+# built freestanding: lfs_ff_config.h stands in for littlefs's lfs_util.h.
+FLAGS += -DLFS_READONLY -DLFS_CONFIG=lfs_ff_config.h
 endif
 
 MCU_FLAG := -DMCU=MCU_$(mcu)

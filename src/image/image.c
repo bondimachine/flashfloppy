@@ -122,7 +122,10 @@ static bool_t try_handler(struct image *im, struct slot *slot,
     struct image_bufs bufs = im->bufs;
     BYTE mode;
 
-    /* Reinitialise image structure, except for static buffers. */
+    /* Reinitialise image structure, except for static buffers. Release any
+     * handle held over from a previously-tried handler first: the memset
+     * below would otherwise strand it. */
+    fs_release(&im->fp);
     memset(im, 0, sizeof(*im));
     im->bufs = bufs;
     im->cur_track = ~0;
@@ -138,8 +141,8 @@ static bool_t try_handler(struct image *im, struct slot *slot,
     mode = FA_READ | FA_OPEN_EXISTING;
     if (handler->write_track != NULL)
         mode |= FA_WRITE;
-    fatfs_from_slot(&im->fp, slot, mode);
-    im->fp.cltbl = cltbl;
+    fs_from_slot(&im->fp, slot, mode);
+    fs_set_cltbl(&im->fp, cltbl);
 
     return handler->open(im);
 }
@@ -237,7 +240,8 @@ void image_extend(struct image *im)
 {
     FSIZE_t new_sz;
 
-    if (!(im->disk_handler->extend && im->fp.dir_ptr && ff_cfg.extend_image))
+    if (!(im->disk_handler->extend && fs_file_resizable(&im->fp)
+          && ff_cfg.extend_image))
         return;
 
     new_sz = im->disk_handler->extend(im);
@@ -245,7 +249,7 @@ void image_extend(struct image *im)
         return;
 
     /* Disable fast-seek mode, as it disallows extending the file. */
-    im->fp.cltbl = NULL;
+    fs_set_cltbl(&im->fp, NULL);
 
     /* Attempt to extend the file. */
     F_lseek(&im->fp, new_sz);
@@ -289,6 +293,11 @@ bool_t image_setup_track(
             return TRUE;
         h = ((track>>1) >= im_nphys_cyls(im)) ? &dummy_image_handler
              : im->disk_handler;
+    } else if (fs_is_lfs()) {
+        /* Direct Access writes through to sectors of a FAT volume. There is
+         * no FAT volume behind the internal-flash image store, so present
+         * these cylinders as empty instead. */
+        h = &dummy_image_handler;
     } else {
         h = &da_image_handler;
         im->nr_sides = 1;

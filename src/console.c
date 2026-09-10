@@ -42,6 +42,14 @@
 
 #endif
 
+/* On RP2350 the console is mirrored to a USB CDC-ACM device on the Pico's
+ * own USB socket, as well as going out of UART0. */
+#if MCU == MCU_rp2350
+#define USB_CONSOLE 1
+#else
+#define USB_CONSOLE 0
+#endif
+
 /* Normally flush to serial is asynchronously executed in a low-pri IRQ. */
 #define CONSOLE_SOFTIRQ SOFTIRQ_1
 DEFINE_IRQ(CONSOLE_SOFTIRQ, "SOFTIRQ_console");
@@ -79,12 +87,27 @@ static void flush_ring_to_serial(void)
 static void SOFTIRQ_console(void)
 {
     flush_ring_to_serial();
+#if USB_CONSOLE
+    usb_cdc_kick();
+#endif
+}
+
+/* Stage one character for output. */
+static void ring_push(char c)
+{
+    ring[MASK(prod++)] = c;
+#if USB_CONSOLE
+    usb_cdc_putc(c);
+#endif
 }
 
 static void kick_tx(void)
 {
     if (sync_console) {
         flush_ring_to_serial();
+#if USB_CONSOLE
+        usb_cdc_flush_sync();
+#endif
     } else if (cons != prod) {
         IRQx_set_pending(CONSOLE_SOFTIRQ);
     }
@@ -106,10 +129,10 @@ int vprintk(const char *format, va_list ap)
         case '\r': /* CR: ignore as we generate our own CR/LF */
             break;
         case '\n': /* LF: convert to CR/LF (usual terminal behaviour) */
-            ring[MASK(prod++)] = '\r';
+            ring_push('\r');
             /* fall through */
         default:
-            ring[MASK(prod++)] = c;
+            ring_push(c);
             break;
         }
     }

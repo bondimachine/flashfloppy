@@ -136,6 +136,8 @@ struct clocks {
 #define CLK_SYS_CTRL_AUXSRC_PLL_SYS (0u<<5)
 #define CLK_PERI_CTRL_ENABLE      (1u<<11)
 #define CLK_PERI_CTRL_AUXSRC_SYS  (0u<<5)
+#define CLK_USB_CTRL_ENABLE       (1u<<11)
+#define CLK_USB_CTRL_AUXSRC_PLL_USB (0u<<5)
 /* div register: integer part is [25:16] on RP2350 */
 #define CLK_DIV_INT(x)            ((x)<<16)
 
@@ -591,6 +593,146 @@ struct rp_i2c {
 
 #define I2C0_BASE 0x40090000
 #define I2C1_BASE 0x40098000
+
+/* USB device controller.
+ *
+ * Two blocks: 4kB of dual-port RAM (packet buffers and per-endpoint
+ * control words) at USBCTRL_DPRAM_BASE, and the controller registers at
+ * USBCTRL_REGS_BASE. Only the DPRAM has no atomic aliases: it is plain
+ * memory and must be read-modify-written by hand. */
+
+struct usb_dpram {
+    uint32_t setup_low;          /* 000: bmRequestType, bRequest, wValue */
+    uint32_t setup_high;         /* 004: wIndex, wLength */
+    /* [ep-1][0] = IN, [ep-1][1] = OUT. EP0 has no control word: its
+     * buffer is fixed at DPRAM offset 0x100. */
+    uint32_t ep_ctrl[15][2];     /* 008-07C */
+    /* [ep][0] = IN, [ep][1] = OUT. */
+    uint32_t ep_buf_ctrl[16][2]; /* 080-0FC */
+    uint8_t ep0_buf[64];         /* 100-13F */
+    uint8_t ep0_buf1[64];        /* 140-17F: 2nd EP0 buffer, unused */
+    uint8_t data[3712];          /* 180-FFF: endpoint packet buffers */
+};
+
+#define USB_DPRAM_DATA_OFFSET 0x180
+
+/* ep_ctrl[] fields */
+#define USB_EP_CTRL_ENABLE        (1u<<31)
+#define USB_EP_CTRL_DOUBLE_BUF    (1u<<30)
+#define USB_EP_CTRL_INT_PER_BUF   (1u<<29)
+#define USB_EP_CTRL_INT_PER_2BUF  (1u<<28)
+#define USB_EP_CTRL_TYPE(x)       ((x)<<26)
+#define USB_EP_CTRL_INT_ON_STALL  (1u<<17)
+#define USB_EP_CTRL_INT_ON_NAK    (1u<<16)
+#define USB_EP_TYPE_CONTROL   0u
+#define USB_EP_TYPE_ISO       1u
+#define USB_EP_TYPE_BULK      2u
+#define USB_EP_TYPE_INTERRUPT 3u
+
+/* ep_buf_ctrl[] fields (buffer 0; buffer 1 is the same, 16 bits up) */
+#define USB_BUF_CTRL_FULL      (1u<<15)
+#define USB_BUF_CTRL_LAST      (1u<<14)
+#define USB_BUF_CTRL_DATA1_PID (1u<<13)
+#define USB_BUF_CTRL_RESET     (1u<<12)
+#define USB_BUF_CTRL_STALL     (1u<<11)
+#define USB_BUF_CTRL_AVAIL     (1u<<10)
+#define USB_BUF_CTRL_LEN_MASK  0x3ffu
+
+struct rp_usb {
+    uint32_t dev_addr_ctrl;      /* 00 */
+    uint32_t int_ep_addr[15];    /* 04-3C */
+    uint32_t main_ctrl;          /* 40 */
+    uint32_t sof_wr;             /* 44 */
+    uint32_t sof_rd;             /* 48 */
+    uint32_t sie_ctrl;           /* 4C */
+    uint32_t sie_status;         /* 50 */
+    uint32_t int_ep_ctrl;        /* 54 */
+    uint32_t buf_status;         /* 58 */
+    uint32_t buf_cpu_should_handle; /* 5C */
+    uint32_t ep_abort;           /* 60 */
+    uint32_t ep_abort_done;      /* 64 */
+    uint32_t ep_stall_arm;       /* 68 */
+    uint32_t nak_poll;           /* 6C */
+    uint32_t ep_status_stall_nak;/* 70 */
+    uint32_t muxing;             /* 74 */
+    uint32_t pwr;                /* 78 */
+    uint32_t phy_direct;         /* 7C */
+    uint32_t phy_direct_override;/* 80 */
+    uint32_t phy_trim;           /* 84 */
+    uint32_t linestate_tuning;   /* 88 */
+    uint32_t intr;               /* 8C: raw interrupt status */
+    uint32_t inte;               /* 90 */
+    uint32_t intf;               /* 94 */
+    uint32_t ints;               /* 98: masked interrupt status */
+};
+
+#define USB_MAIN_CTRL_CONTROLLER_EN (1u<<0)
+#define USB_MAIN_CTRL_HOST_NDEVICE  (1u<<1)
+#define USB_MAIN_CTRL_PHY_ISO       (1u<<2)
+
+#define USB_SIE_CTRL_EP0_INT_STALL  (1u<<31)
+#define USB_SIE_CTRL_EP0_DOUBLE_BUF (1u<<30)
+#define USB_SIE_CTRL_EP0_INT_1BUF   (1u<<29)
+#define USB_SIE_CTRL_EP0_INT_2BUF   (1u<<28)
+#define USB_SIE_CTRL_EP0_INT_NAK    (1u<<27)
+#define USB_SIE_CTRL_TRANSCEIVER_PD (1u<<18)
+#define USB_SIE_CTRL_PULLUP_EN      (1u<<16)
+#define USB_SIE_CTRL_PULLDOWN_EN    (1u<<15)
+#define USB_SIE_CTRL_RESET_BUS      (1u<<13)
+
+#define USB_SIE_STATUS_DATA_SEQ_ERROR (1u<<31)
+#define USB_SIE_STATUS_ACK_REC        (1u<<30)
+#define USB_SIE_STATUS_STALL_REC      (1u<<29)
+#define USB_SIE_STATUS_NAK_REC        (1u<<28)
+#define USB_SIE_STATUS_RX_TIMEOUT     (1u<<27)
+#define USB_SIE_STATUS_RX_OVERFLOW    (1u<<26)
+#define USB_SIE_STATUS_BIT_STUFF_ERROR (1u<<25)
+#define USB_SIE_STATUS_CRC_ERROR      (1u<<24)
+#define USB_SIE_STATUS_ENDPOINT_ERROR (1u<<23)
+#define USB_SIE_STATUS_BUS_RESET      (1u<<19)
+#define USB_SIE_STATUS_TRANS_COMPLETE (1u<<18)
+#define USB_SIE_STATUS_SETUP_REC      (1u<<17)
+#define USB_SIE_STATUS_CONNECTED      (1u<<16)
+#define USB_SIE_STATUS_RESUME         (1u<<11)
+#define USB_SIE_STATUS_SUSPENDED      (1u<< 4)
+
+#define USB_MUXING_TO_PHY           (1u<<0)
+#define USB_MUXING_TO_EXTPHY        (1u<<1)
+#define USB_MUXING_TO_DIGITAL_PAD   (1u<<2)
+#define USB_MUXING_SOFTCON          (1u<<3)
+
+#define USB_PWR_VBUS_EN             (1u<<0)
+#define USB_PWR_VBUS_EN_OVERRIDE_EN (1u<<1)
+#define USB_PWR_VBUS_DETECT         (1u<<2)
+#define USB_PWR_VBUS_DETECT_OVERRIDE_EN (1u<<3)
+
+/* buf_status: two bits per endpoint, IN then OUT. */
+#define USB_BUFF_STATUS_IN(ep)  (1u<<((ep)*2))
+#define USB_BUFF_STATUS_OUT(ep) (2u<<((ep)*2))
+
+#define USB_EP_STALL_ARM_EP0_IN  (1u<<0)
+#define USB_EP_STALL_ARM_EP0_OUT (1u<<1)
+
+/* intr/inte/ints */
+#define USB_INT_TRANS_COMPLETE   (1u<< 3)
+#define USB_INT_BUFF_STATUS      (1u<< 4)
+#define USB_INT_ERROR_DATA_SEQ   (1u<< 5)
+#define USB_INT_STALL            (1u<<10)
+#define USB_INT_VBUS_DETECT      (1u<<11)
+#define USB_INT_BUS_RESET        (1u<<12)
+#define USB_INT_DEV_CONN_DIS     (1u<<13)
+#define USB_INT_DEV_SUSPEND      (1u<<14)
+#define USB_INT_DEV_RESUME       (1u<<15)
+#define USB_INT_SETUP_REQ        (1u<<16)
+#define USB_INT_DEV_SOF          (1u<<17)
+
+#define USBCTRL_DPRAM_BASE 0x50100000
+#define USBCTRL_REGS_BASE  0x50110000
+
+/* Bootrom reboot() (ROM_TABLE_CODE('R','B')) flags. */
+#define REBOOT2_FLAG_REBOOT_TYPE_NORMAL   0x000u
+#define REBOOT2_FLAG_REBOOT_TYPE_BOOTSEL  0x002u
+#define REBOOT2_FLAG_NO_RETURN_ON_SUCCESS 0x100u
 
 /* QMI (QSPI memory interface) -- only for optional XIP timing tweaks */
 struct qmi {
