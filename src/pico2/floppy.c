@@ -23,19 +23,30 @@
 #define O_FALSE 1
 #define O_TRUE  0
 
-/* Input pins (physical GPIO numbers). */
-#define pin_dir     2 /* Bus 18 */
-#define pin_step    3 /* Bus 20 */
+/*
+ * Pin assignment (physical GPIO numbers). GPIOs 2-14 carry the thirteen
+ * signal lines of the 34-way floppy bus *in bus-pin order*, so a ribbon
+ * header wires straight across with no crossovers:
+ *
+ *   GPIO   2   3   4   5   6   7   8   9  10  11  12  13  14
+ *   Bus    2   8  12  16  18  20  22  24  26  28  30  32  34
+ *
+ * (Bus pins 16..34 are simply GPIO*2+6; the odd bus pins are ground.)
+ */
+
+/* Input pins. */
 #define pin_sel0    4 /* Bus 12 */
 #define pin_motor   5 /* Bus 16 */
-#define pin_wgate   6 /* Bus 24 */
-#define pin_side    7 /* Bus 32 */
+#define pin_dir     6 /* Bus 18 */
+#define pin_step    7 /* Bus 20 */
+#define pin_wgate   9 /* Bus 24 */
+#define pin_side   13 /* Bus 32 */
 
 /* Output pins. */
-#define pin_02     9  /* Bus 2: DSKCHG/HDEN */
-#define pin_08     10 /* Bus 8: INDEX */
-#define pin_26     11 /* Bus 26: TRK0 */
-#define pin_28     12 /* Bus 28: WRPROT */
+#define pin_02     2  /* Bus 2: DSKCHG/HDEN */
+#define pin_08     3  /* Bus 8: INDEX */
+#define pin_26     10 /* Bus 26: TRK0 */
+#define pin_28     11 /* Bus 28: WRPROT */
 #define pin_34     14 /* Bus 34: RDY */
 
 /* All OE-managed bus outputs (excludes the PIO-driven RDATA pin). */
@@ -45,7 +56,7 @@
 #define gpio_data gpioa /* ignored on RP2350 */
 
 #define pin_wdata   8  /* Bus 22: PIO0 SM1 input */
-#define pin_rdata   13 /* Bus 30: PIO0 SM0 output */
+#define pin_rdata   12 /* Bus 30: PIO0 SM0 output */
 
 /* DMA channels and their interrupt lines. */
 #define dma_rdata   (dma->ch[0])
@@ -319,14 +330,14 @@ bool_t floppy_ribbon_is_reversed(void)
 
 static void board_floppy_init(void)
 {
-    /* Inputs. */
-    gpio_configure_pin(gpiob, pin_dir,   GPI_bus);
-    gpio_configure_pin(gpioa, pin_step,  GPI_bus);
+    /* Inputs, in bus-pin order. */
     gpio_configure_pin(gpioa, pin_sel0,  GPI_bus);
     gpio_configure_pin(gpiob, pin_motor, GPI_pull_down);
+    gpio_configure_pin(gpiob, pin_dir,   GPI_bus);
+    gpio_configure_pin(gpioa, pin_step,  GPI_bus);
+    gpio_configure_pin(gpio_data, pin_wdata, GPI_bus);
     gpio_configure_pin(gpiob, pin_wgate, GPI_bus);
     gpio_configure_pin(gpiob, pin_side,  GPI_bus);
-    gpio_configure_pin(gpio_data, pin_wdata, GPI_bus);
 
     /* RDATA: SIO function, output latch low, high-impedance. */
     gpio_configure_pin(gpio_data, pin_rdata, GPO_rdata);
@@ -469,6 +480,12 @@ static void IRQ_WGATE(void)
     }
 }
 
+/* Test a floppy-bus pin's latched edges in the INTS words read by
+ * IRQ_io_bank0(): four status bits per GPIO, GPIOs 0-7 in ints0 and
+ * GPIOs 8-15 in ints1. Pin numbers are compile-time constants. */
+#define pin_ints(pin) \
+    (((pin) < 8 ? ints0 : ints1) & (0xfu << (((pin)&7)*4)))
+
 /* Single dispatcher for all floppy-bus GPIO edges. Runs at
  * FLOPPY_IRQ_SEL_PRI; only handlers which perform no timer operations may
  * be called from here. MOTOR (and rotary) events are latched and punted
@@ -492,16 +509,16 @@ static void IRQ_io_bank0(void)
      * the select state. */
     IRQ_SELA_changed();
 
-    if (ints0 & (0xfu << ((pin_wgate&7)*4)))
+    if (pin_ints(pin_wgate))
         IRQ_WGATE();
 
-    if (ints0 & (0xfu << ((pin_step&7)*4)))
+    if (pin_ints(pin_step))
         IRQ_STEP_changed();
 
-    if (ints0 & (0xfu << ((pin_side&7)*4)))
+    if (pin_ints(pin_side))
         IRQ_SIDE_changed();
 
-    if (ints0 & (0xfu << ((pin_motor&7)*4))) {
+    if (pin_ints(pin_motor)) {
         motor_pin_event = TRUE;
         IRQx_set_pending(MOTOR_CHGRST_IRQ);
     }

@@ -5,8 +5,10 @@
  *
  * Pin map (physical GPIO numbers):
  *   0/1    UART0 TX/RX (serial console, debug builds)
- *   2-8    Floppy bus inputs: DIR, STEP, SEL0, MOTOR, WGATE, SIDE, WDATA
- *   9-14   Floppy bus outputs: DSKCHG, INDEX, TRK0, WRPROT, RDATA, RDY
+ *   2-14   Floppy bus, one GPIO per signal line, in bus-pin order:
+ *            bus  2  8 12 16 18 20 22 24 26 28 30 32 34
+ *          i.e. DSKCHG, INDEX, SEL0, MOTOR, DIR, STEP, WDATA, WGATE,
+ *          TRK0, WRPROT, RDATA, SIDE, RDY
  *   15     Speaker
  *   16-19  SD card on SPI0: MISO, CS, SCK, MOSI
  *   20/21  Display I2C0: SDA, SCL
@@ -75,8 +77,8 @@ void board_init(void)
     board_id = BRDREV_Gotek_standard;
     mcu_package = MCU_LQFP64;
 
-    /* GPIO 0-15: UART (0,1), floppy inputs (2-8), floppy outputs (9-14,
-     * configured by floppy_init), speaker (15). */
+    /* GPIO 0-15: UART (0,1), floppy bus (2-14, configured by
+     * floppy_init), speaker (15). */
     lo_skip = 0xffff;
 
     /* GPIO 16-31: SD SPI (16-19), I2C display (20,21).
