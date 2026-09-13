@@ -189,29 +189,62 @@ static void pio_sm_reset(unsigned int sm, unsigned int pc, bool_t drain)
     pio0->sm[sm].instr = pc; /* jmp pc */
 }
 
+/*
+ * Halt a flux DMA channel and wait for it to go idle.
+ *
+ * A stream must never be restarted with its channel still live, because
+ * pio_sm_reset() clears the state machine's FIFO: emptying a FIFO underneath
+ * a DREQ-paced channel leaves the channel's outstanding-request counter out
+ * of step with the FIFO, and it then sits EN=1/BUSY=1 with a full transfer
+ * count and never moves another byte. Aborting here also freezes the
+ * channel's position, so the dma_*_pos() reading that the caller snapshots
+ * next is exact rather than up to a FIFO-depth ahead.
+ *
+ * Called from IRQ context: the spin is a few cycles (one 16-bit transfer at
+ * most), and bounded regardless.
+ */
+static void flux_dma_abort(unsigned int ch)
+{
+    unsigned int i;
+    dma->chan_abort = m(ch);
+    for (i = 0; i < 1000; i++) {
+        if (!(dma->ch[ch].ctrl_trig & DMA_CTRL_BUSY))
+            break;
+        cpu_relax();
+    }
+}
+
 static void rdata_hw_start(void)
 {
     pio_sm_reset(0, RDATA_PROG_ORIGIN, TRUE);
-    if (!rdata_dma_en) {
-        /* First start since mount: begin streaming from the ring. */
-        rdata_dma_en = TRUE;
-        dma_rdata.ctrl_trig = dma_rdata.al1_ctrl | DMA_CTRL_EN;
-    }
+    /* Re-arm the channel. It resumes at its current read_addr, which is the
+     * position dma_rd->cons was snapped to when the stream stopped. */
+    dma_rdata.trans_count = DMA_TRANS_MODE_TRIGGER_SELF
+        | (ARRAY_SIZE(dma_rd->buf) / 2);
+    rdata_dma_en = TRUE;
+    dma_rdata.ctrl_trig = dma_rdata.al1_ctrl | DMA_CTRL_EN;
     RP_SET(&pio0->ctrl) = PIO_CTRL_SM_ENABLE(0);
 }
 
 static void rdata_hw_stop(void)
 {
     RP_CLR(&pio0->ctrl) = PIO_CTRL_SM_ENABLE(0);
+    if (rdata_dma_en) {
+        rdata_dma_en = FALSE;
+        flux_dma_abort(0);
+        flux_dma_ack_rdata();
+    }
 }
 
 static void wdata_hw_start(void)
 {
     pio_sm_reset(1, WDATA_PROG_ORIGIN, TRUE);
-    if (!wdata_dma_en) {
-        wdata_dma_en = TRUE;
-        dma_wdata.ctrl_trig = dma_wdata.al1_ctrl | DMA_CTRL_EN;
-    }
+    /* Re-arm the channel; it continues writing where it left off, which is
+     * the ring position recorded as the previous write's dma_end. */
+    dma_wdata.trans_count = DMA_TRANS_MODE_TRIGGER_SELF
+        | (ARRAY_SIZE(dma_wr->buf) / 2);
+    wdata_dma_en = TRUE;
+    dma_wdata.ctrl_trig = dma_wdata.al1_ctrl | DMA_CTRL_EN;
     RP_SET(&pio0->ctrl) = PIO_CTRL_SM_ENABLE(1);
 }
 
@@ -224,6 +257,11 @@ static void wdata_hw_stop(void)
         if (!((pio0->flevel >> 12) & 0xf)) /* SM1 RX level */
             break;
         cpu_relax();
+    }
+    if (wdata_dma_en) {
+        wdata_dma_en = FALSE;
+        flux_dma_abort(1);
+        flux_dma_ack_wdata();
     }
 }
 
@@ -401,10 +439,38 @@ static bool_t drive_is_writing(void)
     return FALSE;
 }
 
+/*
+ * Shortest gap between STEP pulses we will believe, in microseconds.
+ *
+ * An unbuffered ribbon rings hard enough to put thousands of spurious edges
+ * on this line, in bursts tens of microseconds apart. Most are rejected
+ * anyway because a step is already in progress, but one that lands after
+ * the previous step has settled is indistinguishable from a real one, and
+ * costs a cylinder: the host then reads a track it did not ask for and the
+ * sector headers no longer match, which presents as an unreadable disk
+ * rather than as a seek fault.
+ *
+ * The floor on real hardware is the NEC765's 1ms minimum step rate, and
+ * Amiga/Atari hosts step at 3ms, so half a millisecond discards ringing
+ * with a wide margin and cannot swallow a genuine step. Measured from the
+ * last edge of any kind, not the last accepted one, so a burst holds itself
+ * off until the line goes quiet.
+ */
+#define STEP_GLITCH_FILTER_US 500
+
+static time_t step_prev_time;
+
 static void IRQ_STEP_changed(void)
 {
     struct drive *drv = &drive;
     uint32_t in = sio->gpio_in;
+    time_t now = time_now();
+    bool_t glitch = time_diff(step_prev_time, now)
+        < (int32_t)time_us(STEP_GLITCH_FILTER_US);
+
+    step_prev_time = now;
+    if (glitch)
+        return;
 
     /* Bail if drive not selected. */
     if (in & m(pin_sel0))

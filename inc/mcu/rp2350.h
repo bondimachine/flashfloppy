@@ -73,13 +73,15 @@ static GPIO gpioc = (struct gpio *)3;
 extern uint32_t gpio_od_mask;
 
 /* Mode encoding for gpio_configure_pin():
- *  [4:0] funcsel, [5] PU, [6] PD, [7] OE, [8] OUT, [9] OD-emulation */
+ *  [4:0] funcsel, [5] PU, [6] PD, [7] OE, [8] OUT, [9] OD-emulation,
+ *  [10] high pad drive */
 #define _GPM_FUNC(x) ((x)&0x1f)
 #define _GPM_PU  (1u<<5)
 #define _GPM_PD  (1u<<6)
 #define _GPM_OE  (1u<<7)
 #define _GPM_OUT (1u<<8)
 #define _GPM_OD  (1u<<9)
+#define _GPM_HIDRIVE (1u<<10)
 
 #define GPI_floating  _GPM_FUNC(GPIO_FUNC_SIO)
 #define GPI_pull_up   (_GPM_FUNC(GPIO_FUNC_SIO) | _GPM_PU)

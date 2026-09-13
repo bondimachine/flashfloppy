@@ -636,9 +636,18 @@ static void IRQ_rdata_dma(void)
     if (((dmacons < dma_rd->cons)
          ? (dma_rd->prod >= dma_rd->cons) || (dma_rd->prod < dmacons)
          : (dma_rd->prod >= dma_rd->cons) && (dma_rd->prod < dmacons))
-        && (dmacons != dma_rd->cons))
-        printk("RDATA underrun! %x-%x-%x\n",
-               dma_rd->cons, dma_rd->prod, dmacons);
+        && (dmacons != dma_rd->cons)) {
+        /* Rate-limited: this runs in the flux IRQ, and one message per
+         * underrun floods the console hard enough to cause further
+         * underruns -- a diagnostic that amplifies the fault it reports. */
+        static time_t last_underrun;
+        time_t t = time_now();
+        if (time_diff(last_underrun, t) > time_ms(500)) {
+            last_underrun = t;
+            printk("RDATA underrun! %x-%x-%x\n",
+                   dma_rd->cons, dma_rd->prod, dmacons);
+        }
+    }
 
     dma_rd->cons = dmacons;
 

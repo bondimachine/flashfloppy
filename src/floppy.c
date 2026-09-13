@@ -9,13 +9,21 @@
  * See the file COPYING for more details, or visit <http://unlicense.org>.
  */
 
-#define GPI_bus GPI_floating
 #if MCU == MCU_rp2350
-/* Bus outputs are emulated open-drain (deasserted = high-impedance);
+/* A real drive pulls every bus input up hard, and so does a Gotek. A bare
+ * Pico 2 has no such resistors, so use the pad's own pull-up: a floating
+ * CMOS input oscillates, and on STEP or WGATE that arrives as a storm of
+ * edge interrupts which starves the flux engine. Weak (~50k), so it is
+ * invisible to a host that is driving the line. MOTOR keeps its pull-DOWN:
+ * an unconnected MOTOR must read as asserted.
+ *
+ * Bus outputs are emulated open-drain (deasserted = high-impedance);
  * "AFO" hands the RDATA pin to PIO0. */
-#define GPO_bus GPO_opendrain(_2MHz,O_FALSE)
-#define AFO_bus _GPM_FUNC(GPIO_FUNC_PIO0)
+#define GPI_bus GPI_pull_up
+#define GPO_bus (GPO_opendrain(_2MHz,O_FALSE) | _GPM_HIDRIVE)
+#define AFO_bus (_GPM_FUNC(GPIO_FUNC_PIO0) | _GPM_HIDRIVE)
 #else
+#define GPI_bus GPI_floating
 #define GPO_bus GPO_pushpull(_2MHz,O_FALSE)
 #define AFO_bus _AFO_pushpull(_2MHz,O_FALSE)
 #endif
@@ -383,12 +391,10 @@ static void floppy_sync_flux(void)
     uint16_t nr_to_wrap, nr_to_cons, nr;
     int32_t ticks;
 
-    /* No DMA should occur until the timer is enabled. */
-#if MCU != MCU_rp2350
-    /* (On RP2350 the DMA engine may legitimately run a few samples ahead,
-     * prefetching into the PIO FIFO, which is drained at rdata_start.) */
+    /* No DMA should occur until the timer is enabled. (On RP2350 the flux
+     * channel is aborted when the stream stops, so its position is frozen
+     * here just as the STM32 timer's is.) */
     ASSERT(dma_rd->cons == dma_rdata_pos());
-#endif
 
     nr_to_wrap = ARRAY_SIZE(dma_rd->buf) - dma_rd->prod;
     nr_to_cons = (dma_rd->cons - dma_rd->prod - 1) & buf_mask;

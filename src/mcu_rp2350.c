@@ -123,7 +123,12 @@ void gpio_set_pad(unsigned int pin, uint32_t pad)
 
 void gpio_configure_pin(GPIO gpio, unsigned int pin, unsigned int mode)
 {
-    uint32_t pad = PAD_IE | PAD_DRIVE_4MA | PAD_SCHMITT;
+    /* Bus outputs ask for the strongest pad drive: they must sink the
+     * host's termination current, and a pad that cannot pull the line below
+     * the controller's input threshold reads as a dead line however correct
+     * the firmware driving it. */
+    uint32_t pad = PAD_IE | PAD_SCHMITT
+        | ((mode & _GPM_HIDRIVE) ? PAD_DRIVE_12MA : PAD_DRIVE_4MA);
     uint32_t odm = m(pin);
 
     if (mode & _GPM_PU)
