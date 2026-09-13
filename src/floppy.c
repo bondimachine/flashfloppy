@@ -47,6 +47,7 @@ static time_t sync_time, sync_pos;
 
 static time_t prefetch_start_time;
 static uint32_t max_prefetch_us;
+static time_t prefetch_logged_for;
 
 struct drive;
 static always_inline void drive_change_pin(
@@ -409,16 +410,37 @@ static void floppy_sync_flux(void)
     if (nr < buf_mask)
         return;
 
-    /* Log maximum prefetch times. */
-    prefetch_us = time_diff(prefetch_start_time, time_now()) / TIME_MHZ;
-    if (prefetch_us > max_prefetch_us) {
-        max_prefetch_us = prefetch_us;
-        printk("[%uus]\n", max_prefetch_us);
+    /* Log maximum prefetch times: once per track load, at the moment the
+     * ring first fills. Re-entries while waiting for the aligned start
+     * would otherwise count the wait as prefetch and log every poll. */
+    if (prefetch_logged_for != prefetch_start_time) {
+        prefetch_logged_for = prefetch_start_time;
+        prefetch_us = time_diff(prefetch_start_time, time_now()) / TIME_MHZ;
+        if (prefetch_us > max_prefetch_us) {
+            max_prefetch_us = prefetch_us;
+            printk("[%uus]\n", max_prefetch_us);
+        }
     }
 
     if (!drv->index_suppressed) {
         ticks = time_diff(time_now(), sync_time) - time_us(1);
         if (ticks > time_ms(15)) {
+#if MCU == MCU_rp2350
+            /* Wait for the aligned start instead of skipping the virtual
+             * spindle forward. This port loads tracks from QSPI flash or SD
+             * fast enough that the aligned start is routinely ~18ms away
+             * when the ring fills, so the skip path below would run on
+             * every seek -- on a Gotek, USB latency absorbs the wait and it
+             * almost never runs. Each skip displaces the index train, and a
+             * burst of seeks makes INDEX aperiodic (intervals of 90..570ms
+             * measured against a nominal 200ms). A PC controller abandons a
+             * sector search after two INDEX pulses, so bunched pulses fail
+             * reads on perfectly good tracks; each failure provokes more
+             * seeks, which displace the train further. Keep the skip only
+             * as an escape for a pathological start position. */
+            if (ticks < (int32_t)(drv->image->stk_per_rev + time_ms(50)))
+                return; /* come back when the start is nearer */
+#endif
             /* Too long to wait. Immediately re-sync index timing. */
             drv->index_suppressed = TRUE;
             printk("Trk %u: skip %ums\n",
