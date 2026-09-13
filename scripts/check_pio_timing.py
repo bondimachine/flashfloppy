@@ -39,13 +39,14 @@ def main():
     flux_lead = int(re.search(r"#define FLUX_LEAD (\d+)", text).group(1))
 
     # --- RDATA generator (instructions 0-4, wrap 4->0) ---
-    # out x,16 ; set pindirs,1 [d1] ; nop [d2] ; set pindirs,0 ; jmp x-- [d4]
+    # out x,16 ; set pins,0 [d1] ; nop [d2] ; set pins,1 ; jmp x-- [d4]
+    # (push-pull: assert = drive low, deassert = drive high)
     if prog[0] != 0x6030:
         die("instr 0 is not 'out x, 16'")
-    if (prog[1] & 0xe0ff) != 0xe081:
-        die("instr 1 is not 'set pindirs, 1'")
-    if (prog[3] & 0xe0ff) != 0xe080:
-        die("instr 3 is not 'set pindirs, 0'")
+    if (prog[1] & 0xe0ff) != 0xe000:
+        die("instr 1 is not 'set pins, 0'")
+    if (prog[3] & 0xe0ff) != 0xe001:
+        die("instr 3 is not 'set pins, 1'")
     if (prog[4] & 0xe0ff) != 0x0044:
         die("instr 4 is not 'jmp x-- 4'")
 

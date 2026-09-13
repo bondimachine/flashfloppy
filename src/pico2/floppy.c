@@ -12,9 +12,10 @@
  *    sampled at each falling edge and pushed to the RX FIFO, which DMA
  *    drains into dma_wr->buf. This mimics the STM32 input-capture DMA.
  *
- * Bus outputs are emulated open-drain: OUT is fixed low and assertion is
- * done via output-enable, so a single SIO OE_SET/OE_CLR write acquires or
- * releases the whole bus when SELA changes.
+ * Bus outputs are driven push-pull at 3.3V while selected, as the Gotek
+ * drives them: asserted lines low, everything else actively high.
+ * Deselect releases the whole bus with a single SIO OE_CLR write; pins
+ * whose bus line is unmapped in the current interface mode stay inputs.
  *
  * This is free and unencumbered software released into the public domain.
  * See the file COPYING for more details, or visit <http://unlicense.org>.
@@ -82,6 +83,35 @@ static const struct exti_irq exti_irqs[] = {
 /* Subset of output pins which are active (O_TRUE). */
 static uint32_t gpio_out_active;
 
+/* Output pins we actually drive: set from the interface mode. Unmapped
+ * pins stay inputs -- bus pin 2 is DENSEL on a PC cable, driven by the
+ * controller, and driving against it would contend. */
+static uint32_t gpio_out_driven;
+
+/* Reconfigure the output pins for a new driven set. Caller must have IRQs
+ * disabled: this races the SELA handler otherwise. */
+static void board_floppy_set_driven(uint32_t mask)
+{
+    static const uint8_t pins[] = { pin_02, pin_08, pin_26, pin_28, pin_34 };
+    unsigned int i;
+
+    gpio_out_driven = mask;
+    for (i = 0; i < ARRAY_SIZE(pins); i++) {
+        if (m(pins[i]) & mask)
+            gpio_configure_pin(gpioa, pins[i], GPO_bus);
+        else
+            gpio_configure_pin(gpioa, pins[i], GPI_pull_up);
+    }
+    /* Leave the bus consistent with the current select state. */
+    if (drive.sel) {
+        sio->gpio_out_clr = gpio_out_active & mask;
+        sio->gpio_out_set = ~gpio_out_active & mask;
+        sio->gpio_oe_set = mask;
+    } else {
+        sio->gpio_oe_clr = mask;
+    }
+}
+
 /* Is the RDATA read stream active? Read by the SELA handler. */
 static volatile uint8_t rdata_active;
 #define dma_rd_set_active(x) (rdata_active = (x))
@@ -103,9 +133,9 @@ uint32_t motor_chgrst_exti_mask;
  *
  * RDATA generator (SM0), 2 cycles per SAMPLECLK tick, wrap 0..4:
  *   0: out x, 16           ; next interval (stalls if FIFO dry)
- *   1: set pindirs, 1 [31] ; assert RDATA (drive low)...
+ *   1: set pins, 0 [31]    ; assert RDATA (drive low)...
  *   2: nop [23]            ; ...56-cycle (389ns) pulse
- *   3: set pindirs, 0      ; deassert (high-Z; bus pullup)
+ *   3: set pins, 1         ; deassert (drive high: push-pull)
  *   4: jmp x-- 4 [1]       ; burn 2 cycles per remaining tick
  * Period = 60 + 2*X cycles = (30 + X) ticks: producer entries are biased
  * by FLUX_LEAD relative to the STM32 (ARR+1) encoding.
@@ -124,9 +154,9 @@ uint32_t motor_chgrst_exti_mask;
 #define WDATA_PROG_ORIGIN 8
 static const uint16_t pio_flux_prog[] = {
     /*  0 */ 0x6030, /* out x, 16 */
-    /*  1 */ 0xff81, /* set pindirs, 1 [31] */
+    /*  1 */ 0xff00, /* set pins, 0 [31] */
     /*  2 */ 0xb742, /* nop [23] */
-    /*  3 */ 0xe080, /* set pindirs, 0 */
+    /*  3 */ 0xe001, /* set pins, 1 */
     /*  4 */ 0x0144, /* jmp x-- 4 [1] */
     /*  5 */ 0x0000, /* (unused) */
     /*  6 */ 0x0000, /* (unused) */
@@ -217,6 +247,9 @@ static void flux_dma_abort(unsigned int ch)
 static void rdata_hw_start(void)
 {
     pio_sm_reset(0, RDATA_PROG_ORIGIN, TRUE);
+    /* Known pin state before enabling: idle high, driver on. */
+    pio0->sm[0].instr = 0xe001; /* set pins, 1 */
+    pio0->sm[0].instr = 0xe081; /* set pindirs, 1 */
     /* Re-arm the channel. It resumes at its current read_addr, which is the
      * position dma_rd->cons was snapped to when the stream stopped. */
     dma_rdata.trans_count = DMA_TRANS_MODE_TRIGGER_SELF
@@ -310,10 +343,10 @@ static void timer_dma_hw_init(void)
         | PIO_SHIFTCTRL_FJOIN_TX;
     pio0->sm[0].pinctrl = PIO_PINCTRL_SET_BASE(pin_rdata)
         | PIO_PINCTRL_SET_COUNT(1);
-    /* Output latch low: assertion is via pindirs (open-drain). */
+    /* Idle high with the output driver on: push-pull. */
     pio_sm_reset(0, RDATA_PROG_ORIGIN, TRUE);
-    pio0->sm[0].instr = 0xe000; /* set pins, 0 */
-    pio0->sm[0].instr = 0xe080; /* set pindirs, 0 */
+    pio0->sm[0].instr = 0xe001; /* set pins, 1 */
+    pio0->sm[0].instr = 0xe081; /* set pindirs, 1 */
 
     /* SM1: WDATA capture. */
     pio0->sm[1].clkdiv = 1u << 16;
@@ -410,16 +443,19 @@ static void IRQ_SELA_changed(void)
     board_set_activity_led(sel);
 
     if (sel) {
-        /* SELA is asserted (this drive is selected).
-         * Immediately re-enable all our asserted outputs. */
-        sio->gpio_oe_set = gpio_out_active & FLOPPY_OUT_MASK;
+        /* SELA is asserted (this drive is selected). Drive the bus:
+         * asserted lines low, the rest actively high. Levels first, then
+         * output-enable. RDATA idles high via SIO until the PIO takes it. */
+        sio->gpio_out_clr = gpio_out_active & gpio_out_driven;
+        sio->gpio_out_set = ~gpio_out_active & gpio_out_driven;
+        sio->gpio_oe_set = gpio_out_driven | m(pin_rdata);
         /* Hand RDATA to the PIO if the read stream is active. */
         if (rdata_active)
             io_bank0->gpio[pin_rdata].ctrl = rdata_ctrl_pio;
     } else {
         /* SELA is deasserted (this drive is not selected).
          * Relinquish the bus by disabling all our outputs. */
-        sio->gpio_oe_clr = FLOPPY_OUT_MASK;
+        sio->gpio_oe_clr = gpio_out_driven | m(pin_rdata);
         io_bank0->gpio[pin_rdata].ctrl = rdata_ctrl_sio;
         /* Amiga HD-ID: toggle pin 34 for next time we take the bus. */
         if (sela_amiga_hd_id)

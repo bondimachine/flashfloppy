@@ -17,10 +17,15 @@
  * invisible to a host that is driving the line. MOTOR keeps its pull-DOWN:
  * an unconnected MOTOR must read as asserted.
  *
- * Bus outputs are emulated open-drain (deasserted = high-impedance);
+ * Bus outputs are driven push-pull at 3.3V while selected, exactly as the
+ * STM32 Gotek drives them: asserted lines low, everything else actively
+ * high, so no line is left to the host's pull-up and cable noise between
+ * assertions. Deselect tri-states the whole bus. Pins whose bus line is
+ * unmapped in the current interface mode stay inputs -- bus pin 2 is the
+ * controller-driven DENSEL on a PC cable, and driving it would contend.
  * "AFO" hands the RDATA pin to PIO0. */
 #define GPI_bus GPI_pull_up
-#define GPO_bus (GPO_opendrain(_2MHz,O_FALSE) | _GPM_HIDRIVE)
+#define GPO_bus (GPO_pushpull(_2MHz,O_FALSE) | _GPM_HIDRIVE)
 #define AFO_bus (_GPM_FUNC(GPIO_FUNC_PIO0) | _GPM_HIDRIVE)
 #else
 #define GPI_bus GPI_floating
@@ -283,6 +288,17 @@ void floppy_set_fintf_mode(void)
     if (((drv->outp >> pin34) ^ pin34_inverted) & 1)
         gpio_out_active |= m(pin_34);
 
+#if MCU == MCU_rp2350
+    /* Drive only pins carrying a mapped output. Amiga mode drives pin 34
+     * directly for the HD-ID magic even though it is "unmapped". Runs with
+     * IRQs disabled (we are inside this function's critical region). */
+    board_floppy_set_driven(
+        m(pin_08) | m(pin_26) | m(pin_28)
+        | (((pin02 != outp_unused) || pin02_inverted) ? m(pin_02) : 0)
+        | (((pin34 != outp_unused) || pin34_inverted
+            || (mode == FINTF_AMIGA)) ? m(pin_34) : 0));
+#endif
+
     /* Default handler for IRQ_SELA_changed */
     update_SELA_irq(FALSE);
 
@@ -317,6 +333,12 @@ void floppy_set_max_cyl(void)
 
 static void drive_configure_output_pin(unsigned int pin)
 {
+#if MCU == MCU_rp2350
+    /* Pins carrying no mapped output are left as inputs by
+     * board_floppy_set_driven() (e.g. DENSEL on bus pin 2 in PC mode). */
+    if (!(m(pin) & gpio_out_driven))
+        return;
+#endif
     if (pin >= 16) {
         gpio_configure_pin(gpioa, pin-16, GPO_bus);
     } else {
