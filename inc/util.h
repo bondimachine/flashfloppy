@@ -17,6 +17,7 @@ struct slot {
     uint32_t size;
     uint32_t dir_sect, dir_ptr;
 };
+void fatfs_from_slot(FIL *file, const struct slot *slot, BYTE mode);
 
 bool_t lba_within_fat_volume(uint32_t lba);
 
@@ -92,7 +93,10 @@ static inline int printk(const char *format, ...) { return 0; }
 
 #define log(f, a...) printk("%s: " f, LOG_PREFIX, ## a)
 
-#if LEVEL != LEVEL_logfile
+#if LEVEL == LEVEL_logfile
+/* Logfile management */
+void logfile_flush(FIL *file);
+#else
 #define logfile_flush(f) ((void)0)
 #endif
 

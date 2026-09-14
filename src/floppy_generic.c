@@ -179,6 +179,7 @@ static void floppy_mount(struct slot *slot)
     struct drive *drv = &drive;
     FSIZE_t fastseek_sz;
     DWORD *cltbl;
+    FRESULT fr;
     int max_ring_kb = (ram_kb >= 128) ? 64 : (ram_kb >= 64) ? 32 : 8;
 
     do {
@@ -195,14 +196,24 @@ static void floppy_mount(struct slot *slot)
 #define MAX_FILE_FRAGS 511 /* up to a 4kB cluster table */
         cltbl = arena_alloc(0);
         *cltbl = (MAX_FILE_FRAGS + 1) * 2;
-        fs_from_slot(&im->fp, slot, FA_READ);
+        fatfs_from_slot(&im->fp, slot, FA_READ);
         fastseek_sz = f_size(&im->fp);
-        if ((fastseek_sz == 0) || !fs_fastseek_init(&im->fp, cltbl)) {
-            /* Empty or dummy file, or not enough memory for the link map. */
+        if (fastseek_sz == 0) {
+            /* Empty or dummy file. */
             cltbl = NULL;
         } else {
-            DWORD *_cltbl = arena_alloc(*cltbl * 4);
-            ASSERT(_cltbl == cltbl);
+            im->fp.cltbl = cltbl;
+            fr = f_lseek(&im->fp, CREATE_LINKMAP);
+            printk("Fast Seek: %u frags\n", (*cltbl / 2) - 1);
+            if (fr == FR_OK) {
+                DWORD *_cltbl = arena_alloc(*cltbl * 4);
+                ASSERT(_cltbl == cltbl);
+            } else if (fr == FR_NOT_ENOUGH_CORE) {
+                printk("Fast Seek: FAILED\n");
+                cltbl = NULL;
+            } else {
+                F_die(fr);
+            }
         }
 
         /* ~0 avoids sync match within fewer than 32 bits of scan start. */
@@ -251,7 +262,8 @@ static void floppy_mount(struct slot *slot)
 
     /* After image is extended at mount time, we permit no further changes 
      * to the file metadata. Clear the dirent info to ensure this. */
-    fs_file_freeze(&im->fp);
+    im->fp.dir_ptr = NULL;
+    im->fp.dir_sect = 0;
 
     _dma_rd->state = DMA_stopping;
 

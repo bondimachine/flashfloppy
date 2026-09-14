@@ -62,7 +62,7 @@ int printk(const char *format, ...)
     return n;
 }
 
-void logfile_flush(FS_FILE *file)
+void logfile_flush(FIL *file)
 {
     unsigned int nr;
     char msg[20];

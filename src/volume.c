@@ -34,10 +34,10 @@ void volume_cache_destroy(void)
     metadata_addr = NULL;
 }
 
-void volume_cache_metadata_only(FS_FILE *fp)
+void volume_cache_metadata_only(FIL *fp)
 {
     /* All metadata is accessed via the per-filesystem "sector window". */
-    metadata_addr = FS_FAT(fp)->obj.fs->win;
+    metadata_addr = fp->obj.fs->win;
 }
 #endif
 

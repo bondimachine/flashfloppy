@@ -1,7 +1,7 @@
 /*
  * fs.h
  * 
- * Error-handling wrappers around the filesystem layer (see vfs.c).
+ * Error-handling wrappers around FatFS.
  * 
  * Written & released by Keir Fraser <keir.xen@gmail.com>
  * 
@@ -13,20 +13,20 @@ FRESULT F_call_cancellable(int (*fn)(void *), void *arg);
 
 void F_die(FRESULT fr);
 
-FRESULT F_try_open(FS_FILE *fp, const TCHAR *path, BYTE mode);
-void F_open(FS_FILE *fp, const TCHAR *path, BYTE mode);
-void F_close(FS_FILE *fp);
-void F_read(FS_FILE *fp, void *buff, UINT btr, UINT *br);
-void F_write(FS_FILE *fp, const void *buff, UINT btw, UINT *bw);
-void F_sync(FS_FILE *fp);
-void F_lseek(FS_FILE *fp, FSIZE_t ofs);
-void F_truncate(FS_FILE *fp);
-void F_opendir(FS_DIR *dp, const TCHAR *path);
-void F_closedir(FS_DIR *dp);
-void F_readdir(FS_DIR *dp, FILINFO *fno);
-void F_findfirst(FS_DIR *dp, FILINFO *fno, const TCHAR *path,
+FRESULT F_try_open(FIL *fp, const TCHAR *path, BYTE mode);
+void F_open(FIL *fp, const TCHAR *path, BYTE mode);
+void F_close(FIL *fp);
+void F_read(FIL *fp, void *buff, UINT btr, UINT *br);
+void F_write(FIL *fp, const void *buff, UINT btw, UINT *bw);
+void F_sync(FIL *fp);
+void F_lseek(FIL *fp, FSIZE_t ofs);
+void F_truncate(FIL *fp);
+void F_opendir(DIR *dp, const TCHAR *path);
+void F_closedir(DIR *dp);
+void F_readdir(DIR *dp, FILINFO *fno);
+void F_findfirst(DIR *dp, FILINFO *fno, const TCHAR *path,
                  const TCHAR *pattern);
-void F_findnext(FS_DIR *dp, FILINFO *fno);
+void F_findnext(DIR *dp, FILINFO *fno);
 void F_chdir(const TCHAR *path);
 
 #if 0

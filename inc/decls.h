@@ -17,7 +17,6 @@
 
 #include "build_enums.h"
 #include "types.h"
-
 #include "mcu/common_regs.h"
 #include "mcu/common.h"
 #if MCU == MCU_stm32f105
@@ -36,7 +35,6 @@
 #include "time.h"
 #include "../src/fatfs/ff.h"
 #include "util.h"
-#include "vfs.h"
 #include "list.h"
 #include "cache.h"
 #include "da.h"

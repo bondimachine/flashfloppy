@@ -37,7 +37,6 @@ else
 
 OBJS += main.o
 OBJS += cache.o
-OBJS += vfs.o
 
 OBJS-$(shugart) += floppy.o
 OBJS-$(apple2) += floppy.o

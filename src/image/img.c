@@ -330,7 +330,7 @@ static bool_t tag_open(struct image *im, char *tag)
 
     int match, active, option, nr_t = 0;
     struct {
-        FS_FILE file;
+        FIL file;
         struct slot slot;
         char buf[512];
         struct tag_layout t_layout;
@@ -348,7 +348,7 @@ static bool_t tag_open(struct image *im, char *tag)
     if (!get_img_cfg(&heap->slot))
         return FALSE;
 
-    fs_from_slot(&heap->file, &heap->slot, FA_READ);
+    fatfs_from_slot(&heap->file, &heap->slot, FA_READ);
 
     match = active = 0;
 
