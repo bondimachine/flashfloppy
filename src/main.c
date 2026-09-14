@@ -81,10 +81,7 @@ static void native_get_slot_map(bool_t sorted_only);
 
 bool_t lba_within_fat_volume(uint32_t lba)
 {
-    /* Direct Access needs a FAT volume to write through to. */
-    if (fs_is_lfs())
-        return FALSE;
-    /* Also disallows access to the boot/bpb sector of the mounted volume. */
+    /* Disallows access to the boot/bpb sector of the mounted volume. */
     return (lba > fatfs.volbase) && (lba <= fatfs.volend);
 }
 
@@ -652,10 +649,8 @@ static void file_to_short_slot(
     char *dot;
     unsigned int i;
 
-    /* littlefs has no cluster chains: the file is re-found by name, in the
-     * directory slot_from_short_slot()'s caller names. */
-    slot->attributes = fs_is_lfs() ? AM_RDO : FS_FAT(file)->obj.attr;
-    slot->firstCluster = fs_is_lfs() ? 0 : FS_FAT(file)->obj.sclust;
+    slot->attributes = FS_FAT(file)->obj.attr;
+    slot->firstCluster = FS_FAT(file)->obj.sclust;
     slot->size = f_size(file);
     snprintf(slot->name, sizeof(slot->name), "%s", name);
     if ((dot = strrchr(slot->name, '.')) != NULL) {
@@ -770,14 +765,9 @@ static int native_read_and_sort_dir(void)
         if (!native_dir_next())
             goto complete;
         *--p_ent = ent;
-        if (fs_is_lfs()) {
-            /* No dirent address: the entry is re-found by name. */
-            ent->dir_sect = ent->dir_off = 0;
-        } else {
-            ASSERT((unsigned int)(fs->fp.dir_ptr - fatfs.win) < 512u);
-            ent->dir_sect = fs->fp.dir_sect;
-            ent->dir_off = fs->fp.dir_ptr - fatfs.win;
-        }
+        ASSERT((unsigned int)(fs->fp.dir_ptr - fatfs.win) < 512u);
+        ent->dir_sect = fs->fp.dir_sect;
+        ent->dir_off = fs->fp.dir_ptr - fatfs.win;
         ent->attr = fs->fp.fattrib;
         strcpy(ent->name, fs->fp.fname);
         ent = (struct native_dirent *)(

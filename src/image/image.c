@@ -122,10 +122,7 @@ static bool_t try_handler(struct image *im, struct slot *slot,
     struct image_bufs bufs = im->bufs;
     BYTE mode;
 
-    /* Reinitialise image structure, except for static buffers. Release any
-     * handle held over from a previously-tried handler first: the memset
-     * below would otherwise strand it. */
-    fs_release(&im->fp);
+    /* Reinitialise image structure, except for static buffers. */
     memset(im, 0, sizeof(*im));
     im->bufs = bufs;
     im->cur_track = ~0;
@@ -293,11 +290,6 @@ bool_t image_setup_track(
             return TRUE;
         h = ((track>>1) >= im_nphys_cyls(im)) ? &dummy_image_handler
              : im->disk_handler;
-    } else if (fs_is_lfs()) {
-        /* Direct Access writes through to sectors of a FAT volume. There is
-         * no FAT volume behind the internal-flash image store, so present
-         * these cylinders as empty instead. */
-        h = &dummy_image_handler;
     } else {
         h = &da_image_handler;
         im->nr_sides = 1;

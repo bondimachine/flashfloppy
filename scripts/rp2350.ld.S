@@ -58,8 +58,7 @@ SECTIONS
     . = . + 512;
     _irq_stacktop = .;
     _thread_stackbottom = .;
-    /* Larger than the STM32 targets' 1kB: littlefs path resolution puts
-     * 128-byte path buffers on this stack, and SRAM is not scarce here. */
+    /* Larger than the STM32 targets' 1kB: SRAM is not scarce here. */
     . = . + 4096;
     _thread_stacktop = .;
     _sbss = .;

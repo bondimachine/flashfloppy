@@ -4,5 +4,5 @@
 /out
 /ext
 __pycache__/
-#disk images for littlefs
+#disk images for the internal-flash image store
 data

@@ -62,22 +62,9 @@ FRESULT F_try_open(FS_FILE *fp, const TCHAR *path, BYTE mode)
     return fr;
 }
 
-#define FA_CREATES (FA_CREATE_NEW|FA_CREATE_ALWAYS|FA_OPEN_ALWAYS)
-
 void F_open(FS_FILE *fp, const TCHAR *path, BYTE mode)
 {
     FRESULT fr = fs_open(fp, path, mask_mode(mode));
-#if HAS_LITTLEFS
-    /* The internal-flash image store is the only volume that reports itself
-     * read-only (see volume_readonly()). A caller that wanted to write to or
-     * create a file there gets an empty one instead, so that the writes are
-     * dropped rather than the absent file being an error. */
-    if ((fr == FR_NO_FILE) && volume_readonly()
-        && (mode & (FA_WRITE|FA_CREATES))) {
-        fs_open_null(fp);
-        return;
-    }
-#endif
     handle_fr(fr);
 }
 

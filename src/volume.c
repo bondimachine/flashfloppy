@@ -11,6 +11,9 @@
 
 extern struct volume_ops sd_ops;
 extern struct volume_ops usb_ops;
+#if MCU == MCU_rp2350
+extern struct volume_ops flash_ops;
+#endif
 
 static struct volume_ops *vol_ops = &usb_ops;
 
@@ -33,10 +36,6 @@ void volume_cache_destroy(void)
 
 void volume_cache_metadata_only(FS_FILE *fp)
 {
-    if (fs_is_lfs()) {
-        /* No block layer under littlefs: nothing to cache. */
-        return;
-    }
     /* All metadata is accessed via the per-filesystem "sector window". */
     metadata_addr = FS_FAT(fp)->obj.fs->win;
 }
@@ -50,12 +49,20 @@ DSTATUS disk_initialize(BYTE pdrv)
         goto out;
 
     /* Try SD if the build and the board support it, and no USB drive is
-     * inserted. (RP2350 boards have no USB stack: SD is the only volume.) */
+     * inserted. (RP2350 boards have no USB stack: SD is the only card.) */
     if (((board_id == BRDREV_Gotek_sd_card) || (MCU == MCU_rp2350))
         && !usbh_msc_inserted()
         && !(sd_ops.initialize(pdrv) & STA_NOINIT)) {
         vol_ops = &sd_ops;
+        goto out;
     }
+
+#if MCU == MCU_rp2350
+    /* No removable media: fall back to the FAT image store in the internal
+     * QSPI flash. */
+    if (!(flash_ops.initialize(pdrv) & STA_NOINIT))
+        vol_ops = &flash_ops;
+#endif
 
 out:
     return disk_status(pdrv);
@@ -110,9 +117,6 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE ctrl, void *buff)
 
 bool_t volume_connected(void)
 {
-    /* The internal-flash littlefs volume is soldered down: always present. */
-    if (fs_is_lfs())
-        return TRUE;
     /* Force switch to USB drive if inserted. */
     if ((vol_ops == &sd_ops) && usbh_msc_inserted())
         return FALSE;
@@ -121,9 +125,6 @@ bool_t volume_connected(void)
 
 bool_t volume_readonly(void)
 {
-    /* littlefs in QSPI flash is mounted read-only: see vfs.c. */
-    if (fs_is_lfs())
-        return TRUE;
     return vol_ops->readonly();
 }
 

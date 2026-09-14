@@ -198,7 +198,7 @@ static void floppy_mount(struct slot *slot)
         fs_from_slot(&im->fp, slot, FA_READ);
         fastseek_sz = f_size(&im->fp);
         if ((fastseek_sz == 0) || !fs_fastseek_init(&im->fp, cltbl)) {
-            /* Empty or dummy file, or a backend with no cluster chain. */
+            /* Empty or dummy file, or not enough memory for the link map. */
             cltbl = NULL;
         } else {
             DWORD *_cltbl = arena_alloc(*cltbl * 4);

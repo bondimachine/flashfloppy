@@ -16,10 +16,6 @@ struct slot {
     uint32_t firstCluster;
     uint32_t size;
     uint32_t dir_sect, dir_ptr;
-#if HAS_LITTLEFS
-    /* littlefs has no cluster chains: remember where the file lives. */
-    char path[FS_PATH_MAX];
-#endif
 };
 
 bool_t lba_within_fat_volume(uint32_t lba);
